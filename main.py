@@ -85,16 +85,16 @@ def import_data():
     # IC_Register.to_csv("IC_Reg.csv")
 
     #macos
-    Sub_Coordinates = pd.read_csv('/Users/nathanaelsims/PycharmProjects/DC_Load_Flow_Tool_08May/data/CRM_Sub_Coordinates_WGS84.csv')
+    Sub_Coordinates = pd.read_csv('./data/CRM_Sub_Coordinates_WGS84.csv')
     Sub_Coordinates.dropna(inplace = True)
-    TEC_Register = pd.read_csv('/Users/nathanaelsims/PycharmProjects/DC_Load_Flow_Tool_08May/data/TEC_Reg.csv')
-    IC_Register = pd.read_csv('/Users/nathanaelsims/PycharmProjects/DC_Load_Flow_Tool_08May/data/IC_Reg.csv')
-    FES_2022_GSP_Dem = pd.read_csv('/Users/nathanaelsims/PycharmProjects/DC_Load_Flow_Tool_08May/data/FES_Dem.csv')
-    NGET_Circuits = pd.read_excel('/Users/nathanaelsims/PycharmProjects/DC_Load_Flow_Tool_08May/data/Appendix B 2022.xlsx', sheet_name="B-2-1c", skiprows=[0])
-    NGET_Circuit_Changes = pd.read_excel('/Users/nathanaelsims/PycharmProjects/DC_Load_Flow_Tool_08May/data/Appendix B 2022.xlsx', sheet_name="B-2-2c", skiprows=[0])
-    NGET_Subs = pd.read_excel('/Users/nathanaelsims/PycharmProjects/DC_Load_Flow_Tool_08May/data/Appendix B 2022.xlsx', sheet_name="B-1-1c", skiprows=[0])
-    NGET_Tx = pd.read_excel('/Users/nathanaelsims/PycharmProjects/DC_Load_Flow_Tool_08May/data/Appendix B 2022.xlsx', sheet_name="B-3-1c", skiprows=[0])
-    NGET_Tx_Changes = pd.read_excel('/Users/nathanaelsims/PycharmProjects/DC_Load_Flow_Tool_08May/data/Appendix B 2022.xlsx', sheet_name="B-3-2c", skiprows=[0])
+    TEC_Register = pd.read_csv('./data/TEC_Reg.csv')
+    IC_Register = pd.read_csv('./data/IC_Reg.csv')
+    FES_2022_GSP_Dem = pd.read_csv('./data/FES_Dem.csv')
+    NGET_Circuits = pd.read_excel('./data/Appendix B 2022.xlsx', sheet_name="B-2-1c", skiprows=[0])
+    NGET_Circuit_Changes = pd.read_excel('./data/Appendix B 2022.xlsx', sheet_name="B-2-2c", skiprows=[0])
+    NGET_Subs = pd.read_excel('./data/Appendix B 2022.xlsx', sheet_name="B-1-1c", skiprows=[0])
+    NGET_Tx = pd.read_excel('./data/Appendix B 2022.xlsx', sheet_name="B-3-1c", skiprows=[0])
+    NGET_Tx_Changes = pd.read_excel('./data/Appendix B 2022.xlsx', sheet_name="B-3-2c", skiprows=[0])
 
     #windows
     # Sub_Coordinates = pd.read_csv(r"C:\Users\nathanael.sims\PycharmProjects\DC_Power_Flow_Project\data\CRM_Sub_Coordinates_WGS84.csv")
