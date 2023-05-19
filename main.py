@@ -4,14 +4,8 @@ import numpy as np
 import streamlit as st
 import requests
 import json
-from sys import platform as sys_pf
 import re
-from PIL import Image, ImageTk
-
-# use MacBook OS
-# if sys_pf == 'darwin':
-#     import matplotlib
-#     matplotlib.use("TkAgg")
+from PIL import Image
 
 @st.cache_data
 def import_data():
