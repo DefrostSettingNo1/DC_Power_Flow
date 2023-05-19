@@ -2,7 +2,7 @@
 
 Copy all files into project then type "streamlit run 🏠_Homepage.py" into Terminal
 
-Requirements.txt file is not available yet, however the following modules give an idea of what is required to be installed:
+Requirements.txt file is available, or you can manually install the following modules:
 - pandapower
 - numpy
 - streamlit
