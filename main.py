@@ -296,6 +296,22 @@ def filter_tec_ic_to_recognizables(net,NGET_Subs,TEC_Register,IC_Register,FES_20
     TEC_Register.reset_index(drop=True, inplace=True)
     TEC_Register_With_Bus = TEC_Register[pd.to_numeric(TEC_Register['bus'], errors='coerce').notnull()]
     TEC_Register_With_Bus.reset_index(drop=True, inplace=True)
+    TEC_Register_With_Bus['Gen_Type'] = ""
+    for i, row in TEC_Register_With_Bus.iterrows():
+        if re.search('(?i).*nuclear.*', f"{row['Plant Type']} {row['Generator Name']}"):
+            TEC_Register_With_Bus.at[i, 'Gen_Type'] = "Nuclear"
+        elif re.search('(?i).*wind.*', f"{row['Plant Type']} {row['Generator Name']}"):
+            TEC_Register_With_Bus.at[i, 'Gen_Type'] = "Wind"
+        elif re.search('(?i).*pv|solar.*', f"{row['Plant Type']} {row['Generator Name']}"):
+            TEC_Register_With_Bus.at[i, 'Gen_Type'] = "PV"
+        elif re.search('(?i).*CCGT|CHP|Biomass| gas .*', f"{row['Plant Type']} {row['Generator Name']}"):
+            TEC_Register_With_Bus.at[i, 'Gen_Type'] = "CCGT/CHP/Biomass"
+        elif re.search('(?i).*pump|hydro.*', f"{row['Plant Type']} {row['Generator Name']}"):
+            TEC_Register_With_Bus.at[i, 'Gen_Type'] = "Hydro/Pump"
+        elif re.search('(?i).*energy storage|battery|bess.*', f"{row['Plant Type']} {row['Generator Name']}"):
+            TEC_Register_With_Bus.at[i, 'Gen_Type'] = "BESS"
+        else:
+            TEC_Register_With_Bus.at[i, 'Gen_Type'] = "Other"
 
     IC_Register = IC_Register.dropna(subset=['Connection Site'])
     for i, row in IC_Register.iterrows():
@@ -325,9 +341,11 @@ def filter_tec_ic_to_recognizables(net,NGET_Subs,TEC_Register,IC_Register,FES_20
         FES_2022_GSP_Dem.loc[m,'Demand_Summer_Peak'] = (int(FES_2022_GSP_Dem.loc[m,'DemandPk']) + int(FES_2022_GSP_Dem.loc[m,'DemandPM']))/2
     FES_2022_GSP_Dem = FES_2022_GSP_Dem[FES_2022_GSP_Dem['bus_id']!=""]
 
-    return TEC_Register_With_Bus, IC_Register_With_Bus, FES_2022_GSP_Dem
+    tot_wind = TEC_Register_With_Bus.loc[TEC_Register_With_Bus['Gen_Type'] == 'Wind', ['MW Connected', 'MW Increase / Decrease']].sum(axis=1).clip(lower=0).sum()
 
-def create_load_gen(demand_scaling, scale_interconnector, scale_wind, scale_pv, scale_nuclear, scale_bess, scale_all_other, net, FES_2022_GSP_Dem, TEC_Register_With_Bus, IC_Register_With_Bus):
+    return TEC_Register_With_Bus, IC_Register_With_Bus, FES_2022_GSP_Dem, tot_wind
+
+def create_load_gen(demand_scaling, scale_interconnector, scale_wind, scale_pv, scale_nuclear, scale_bess, scale_gas, scale_pump, scale_all_other, net, FES_2022_GSP_Dem, TEC_Register_With_Bus, IC_Register_With_Bus):
     # global FES_2022_GSP_Dem
     for m, row in FES_2022_GSP_Dem.iterrows():
         load_name = f"{row['GSP']}__FES-LTW-2027"
@@ -344,20 +362,25 @@ def create_load_gen(demand_scaling, scale_interconnector, scale_wind, scale_pv, 
     for n, row in TEC_Register_With_Bus.iterrows():
         gen_name = row['Generator Name']
         gen_bus = row['bus']
+        type_gen = row['Gen_Type']
         max_p_mw = float(row['MW Connected']) + float(row['MW Increase / Decrease']) if float(row['MW Connected']) + float(
             row['MW Increase / Decrease']) > 0 else 0
-        if row['Plant Type'] == "Nuclear":
+        if re.search('(?i).*nuclear.*', f"{row['Plant Type']} {row['Generator Name']}"):
             scaling = scale_nuclear
-        elif re.search('(?i).*wind.*', row['Plant Type']):
+        elif re.search('(?i).*wind.*', f"{row['Plant Type']} {row['Generator Name']}"):
             scaling = scale_wind
-        elif re.search('(?i).*pv.*', row['Plant Type']):
+        elif re.search('(?i).*pv|solar.*', f"{row['Plant Type']} {row['Generator Name']}"):
             scaling = scale_pv
-        elif re.search('(?i).*energy storage.*', row['Plant Type']):
+        elif re.search('(?i).*CCGT|CHP|Biomass| gas .*', f"{row['Plant Type']} {row['Generator Name']}"):
+            scaling = scale_gas
+        elif re.search('(?i).*pump|hydro.*', f"{row['Plant Type']} {row['Generator Name']}"):
+            scaling = scale_pump
+        elif re.search('(?i).*energy storage|battery|bess.*', f"{row['Plant Type']} {row['Generator Name']}"):
             scaling = scale_bess
         else:
             scaling = scale_all_other
         p_mw = max_p_mw * scaling
-        pp.create_sgen(net, bus=gen_bus, p_mw=p_mw, q_mvar=0, name=gen_name, scaling=1, in_service=True, max_p_mw=max_p_mw)
+        pp.create_sgen(net, bus=gen_bus, p_mw=p_mw, q_mvar=0, name=gen_name, type=type_gen, scaling=1, in_service=True, max_p_mw=max_p_mw)
     # global IC_Register_With_Bus
     for n, row in IC_Register_With_Bus.iterrows():
         if 0 <= scale_interconnector <= 1:
@@ -366,7 +389,7 @@ def create_load_gen(demand_scaling, scale_interconnector, scale_wind, scale_pv, 
             max_p_mw = row['MW Import - Total']
             scaling = scale_interconnector
             p_mw = max_p_mw * scaling
-            pp.create_sgen(net, bus=gen_bus, p_mw=p_mw, q_mvar=0, name=gen_name, scaling=1, in_service=True, max_p_mw=max_p_mw)
+            pp.create_sgen(net, bus=gen_bus, p_mw=p_mw, q_mvar=0, name=gen_name, type="Interconnector", scaling=1, in_service=True, max_p_mw=max_p_mw)
         elif -1 <= scale_interconnector < 0:
             load_name = row['Generator Name']
             load_bus = row['bus']
@@ -374,23 +397,28 @@ def create_load_gen(demand_scaling, scale_interconnector, scale_wind, scale_pv, 
             scaling = scale_interconnector
             p_mw = float(row['MW Export - Total']) * -1 * scaling
             q_mvar = 0
-            pp.create_load(net, bus=load_bus, p_mw=p_mw, q_mvar=q_mvar, const_z_percent=0, const_i_percent=0, name=load_name,
+            pp.create_load(net, bus=load_bus, p_mw=p_mw, q_mvar=q_mvar, type="Interconnector", const_z_percent=0, const_i_percent=0, name=load_name,
                            scaling=1, in_service=True)
 
-    b6_transfer_mw = (float(scale_wind) * 7000) if ((float(scale_wind) * 7000) < 6001) else 6000
+    tot_wind = TEC_Register_With_Bus.loc[TEC_Register_With_Bus['Gen_Type'] == 'Wind', ['MW Connected', 'MW Increase / Decrease']].sum(axis=1).clip(lower=0).sum()
+    b6_transfer_mw_0 = (-3.353e-6) * (scale_wind*tot_wind) ** 2 + 0.3758 * (scale_wind*tot_wind) - 61.84
+    b6_transfer_mw = b6_transfer_mw_0 if b6_transfer_mw_0 < 6001 else 6000
+
     if b6_transfer_mw > 4000:
         w_link = 2200
-        ac_route = (b6_transfer_mw - w_link)/2
+        ac_route_1 = (b6_transfer_mw - w_link) * 0.56
+        ac_route_2 = (b6_transfer_mw - w_link) * 0.44
     else:
         w_link = b6_transfer_mw / 3
-        ac_route = (b6_transfer_mw) / 3
+        ac_route_1 = (b6_transfer_mw - w_link) * 0.56
+        ac_route_2 = (b6_transfer_mw - w_link) * 0.44
 
     # create sgen for Harker
-    pp.create_sgen(net, bus=148, p_mw=ac_route, q_mvar=0, name=".B6 transfer - Harker", scaling=1, in_service=True, max_p_mw=max_p_mw)
+    pp.create_sgen(net, bus=148, p_mw=ac_route_2, q_mvar=0, name=".B6 transfer - Harker", type="B6 Transfer", scaling=1, in_service=True, max_p_mw=max_p_mw)
     # create sgen for Blyth
-    pp.create_sgen(net, bus=23, p_mw=ac_route, q_mvar=0, name=".B6 transfer - Blyth + Stella West", scaling=1, in_service=True, max_p_mw=max_p_mw)
+    pp.create_sgen(net, bus=23, p_mw=ac_route_1, q_mvar=0, name=".B6 transfer - Blyth + Stella West", type="B6 Transfer", scaling=1, in_service=True, max_p_mw=max_p_mw)
     # create sgen for Western Link
-    pp.create_sgen(net, bus=124, p_mw=w_link, q_mvar=0, name=".B6 transfer - Western Link", scaling=1, in_service=True, max_p_mw=max_p_mw)
+    pp.create_sgen(net, bus=124, p_mw=w_link, q_mvar=0, name=".B6 transfer - Western Link", type="B6 Transfer", scaling=1, in_service=True, max_p_mw=max_p_mw)
 
     return net
 

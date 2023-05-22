@@ -2,9 +2,18 @@ import streamlit as st
 import pandas as pd
 from streamlit_folium import folium_static
 import folium
+from PIL import Image
 
-st.title("View the Results")
-st.text('\n')
+with st.container():
+    col1, col2 = st.columns([5,1], gap="large")
+
+    with col2:
+        image1 = Image.open('National_Grid_Logo_White.png')
+        st.image(image1, use_column_width="always")
+
+    with col1:
+        with st.container():
+            st.title("View the Results")
 st.text('\n')
 
 if 'line_tx_results_pre_int_sorted' not in st.session_state:
