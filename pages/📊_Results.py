@@ -47,22 +47,42 @@ else:
             with st.container():
                 st.subheader("Map of overloads:")
                 mask = st.session_state.overall_result_sorted['loading_percent'] > 100
-                point_names = "_".join(st.session_state.overall_result_sorted.loc[mask,'name'].tolist())
+                point_names = "_".join(st.session_state.overall_result_sorted.loc[mask, 'name'].tolist())
                 map_center = [st.session_state.coord['latitude'].mean(), st.session_state.coord['longitude'].mean()]
                 m = folium.Map(location=map_center, zoom_start=10, tiles='cartodbpositron')
                 show_overload_markers_only = st.checkbox(":red[_Show only overloads_]")
+
                 for index, row in st.session_state.coord.iterrows():
                     if row['Site Code'] in point_names:
                         color = 'red'
                     else:
                         color = 'blue'
                     if not show_overload_markers_only or color == 'red':
-                        folium.CircleMarker(location=[row['latitude'], row['longitude']],radius = 5,fill = True,fill_opacity = 0.7,tooltip = row['Site Name'],color = color).add_to(m)
+                        tooltip_content = f"{row['Site Name']}<br>Additional Info"
+                        folium.CircleMarker(
+                            location=[row['latitude'], row['longitude']],
+                            radius=5,
+                            fill=True,
+                            fill_opacity=0.7,
+                            tooltip=tooltip_content,
+                            color=color
+                        ).add_to(m)
+
                 m.fit_bounds(m.get_bounds())
-                folium_static(m)
+
+                # set map to be equal width of container
+                map_width_str = "100%"
+                map_height_str = "500px"
+                map_styling = f"width: {map_width_str}; height: {map_height_str}; margin: 0 auto;"
+
+                map_html = f'<div style="{map_styling}">{m.get_root().render()}</div>'
+                st.components.v1.html(map_html, height=500)
+
+                # if "set map to be equal width of container" not used then use folium_static(m) below
+                # folium_static(m)
+
                 if show_overload_markers_only:
                     st.write(":red[**Only showing nodes connected to lines where loading > 100% pre / post-fault**]")
-
 
     with tab2:
         col3, col4 = st.columns(2, gap="large")
