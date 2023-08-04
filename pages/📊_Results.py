@@ -23,28 +23,22 @@ else:
     tab1, tab2 = st.tabs(["Post-fault results", "Pre-fault results"])
     with tab1:
         col1, col2 = st.columns(2,gap="large")
-        with col1:
-            with st.container():
+        #NEW#######
+        col3, col4 = st.columns(2,gap="large")
+        with st.container():
+            with col1:
                 list_outages = ""
                 for i in st.session_state.outage_line_name:
                     list_outages += "- " + f":blue[{i}]" + "\n"
-                list_critical = ""
-                for i in st.session_state.critical_lines:
-                    list_critical += "- " + f":red[{i}]" + "\n"
+
                 st.subheader("Selected outages:")
                 st.markdown(list_outages)
                 st.text('\n')
                 st.subheader("Post-fault line loadings (outages applied):")
                 st.dataframe(st.session_state.overall_result_sorted,use_container_width=True)
 
-                st.text('\n')
-                st.subheader("Critical contingencies:")
-                st.markdown("_Contingencies resulting in an overload (>100%) of a line._")
-                st.markdown(list_critical)
-
-
-        with col2:
-            with st.container():
+            
+            with col2:
                 st.subheader("Map of overloads:")
                 mask = st.session_state.overall_result_sorted['loading_percent'] > 100
                 point_names = "_".join(st.session_state.overall_result_sorted.loc[mask, 'name'].tolist())
@@ -83,10 +77,38 @@ else:
 
                 if show_overload_markers_only:
                     st.write(":red[**Only showing nodes connected to lines where loading > 100% pre / post-fault**]")
+        
+        with st.container():
+            with col3:
+                list_critical_nept=''
+                #list_critical_sing = ""
+                #for i in st.session_state.critical_cont_singular:
+                    #list_critical_sing += "- " + f":red[{i}]" + "\n"
+            
+                for i in st.session_state.critical_cont_neptune:
+                    list_critical_nept += "- " + f":red[{i}]" + "\n"
+                st.text('\n')
+                st.subheader("Critical contingencies:")
+                st.markdown("_Contingencies resulting in an overload (>100%) of a line._")
+                    
+                #if(list_critical_sing!=''):
+                    #st.markdown('_Singular Line Contingencies:_')
+                    #st.markdown(list_critical_sing)
+                    
+                if(list_critical_nept!=''):
+                    st.markdown('_Neptune Contingency Names:_')
+                    st.markdown(list_critical_nept)
+            with col4:
+                ##VISUAL OF HOW MANY CONTINGENCIES
+                st.text('\n\n')
+                temp=len(st.session_state.critical_cont_neptune)
+                #st.metric(label='Number of Critical Contingencies:',value=temp)
+                st.metric(label=":orange[**Number of Critical Contingencies:**]",value=temp)
+                
 
     with tab2:
-        col3, col4 = st.columns(2, gap="large")
-        with col3:
+        col5, col6 = st.columns(2, gap="large")
+        with col5:
             st.subheader("Pre-fault intact line loadings:")
             st.dataframe(st.session_state.line_tx_results_pre_int_sorted, use_container_width=True)
             st.text('\n')
@@ -96,7 +118,7 @@ else:
             st.subheader("Line ratings information: ")
             st.dataframe(st.session_state.line_info, use_container_width=True)
             st.text('\n')
-        with col4:
+        with col6:
             st.subheader("All generators:")
             st.dataframe(st.session_state.gen_info, use_container_width=True)
             st.text('\n')

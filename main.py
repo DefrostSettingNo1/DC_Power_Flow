@@ -95,7 +95,8 @@ def import_data():
     NGET_Subs = pd.read_excel('./data/Appendix B 2022.xlsx', sheet_name="B-1-1c", skiprows=[0])
     NGET_Tx = pd.read_excel('./data/Appendix B 2022.xlsx', sheet_name="B-3-1c", skiprows=[0])
     NGET_Tx_Changes = pd.read_excel('./data/Appendix B 2022.xlsx', sheet_name="B-3-2c", skiprows=[0])
-
+    Neptune_Contingencies_Unfiltered=pd.read_excel(r'C:\Users\kieran.frost2\DC_Power_Flow\data\Neptune_Contingencies.xlsx',sheet_name='Contingencies')
+    Neptune_Contingency_Circuits_All=pd.read_excel(r'C:\Users\kieran.frost2\DC_Power_Flow\data\Neptune_Contingencies.xlsx',sheet_name='Circuits')
     #windows
     # Sub_Coordinates = pd.read_csv(r"C:\Users\nathanael.sims\PycharmProjects\DC_Power_Flow_Project\data\CRM_Sub_Coordinates_WGS84.csv")
     # Sub_Coordinates.dropna(inplace = True)
@@ -108,10 +109,10 @@ def import_data():
     # NGET_Tx = pd.read_excel(r"C:\Users\nathanael.sims\PycharmProjects\DC_Power_Flow_Project\data\Appendix B 2022.xlsx", sheet_name="B-3-1c", skiprows=[0])
     # NGET_Tx_Changes = pd.read_excel(r"C:\Users\nathanael.sims\PycharmProjects\DC_Power_Flow_Project\data\Appendix B 2022.xlsx", sheet_name="B-3-2c", skiprows=[0])
 
-    return TEC_Register, IC_Register, FES_2022_GSP_Dem, NGET_Circuits, NGET_Circuit_Changes, NGET_Subs, NGET_Tx, NGET_Tx_Changes, Sub_Coordinates
+    return TEC_Register, IC_Register, FES_2022_GSP_Dem, NGET_Circuits, NGET_Circuit_Changes, NGET_Subs, NGET_Tx, NGET_Tx_Changes, Sub_Coordinates,Neptune_Contingencies_Unfiltered,Neptune_Contingency_Circuits_All
 
 @st.cache_data
-def manipulate_static_data_sheets(TEC_Register,IC_Register,FES_2022_GSP_Dem,NGET_Circuits,NGET_Circuit_Changes,NGET_Subs,NGET_Tx,NGET_Tx_Changes,Sub_Coordinates):
+def manipulate_static_data_sheets(TEC_Register,IC_Register,FES_2022_GSP_Dem,NGET_Circuits,NGET_Circuit_Changes,NGET_Subs,NGET_Tx,NGET_Tx_Changes,Sub_Coordinates,Neptune_Contingencies_Unfiltered,Neptune_Contingency_Circuits_All):
     TEC_Register = TEC_Register[~TEC_Register["Project Name"].isin(["Drax (Coal)",
                                                                        "Dungeness B",
                                                                        "Hartlepool",
@@ -155,8 +156,75 @@ def manipulate_static_data_sheets(TEC_Register,IC_Register,FES_2022_GSP_Dem,NGET
     bus_ids_df = bus_ids_df[bus_ids_df["vn_kv"] != ""]
     bus_ids_df.reset_index(drop=True, inplace=True)
     bus_ids_df["index"] = bus_ids_df.reset_index().index
+    
+    '''
+        CONTINGENCY WORK
+    '''
+    Neptune_Contingency_Node_Numbers=pd.Series(pd.concat([Neptune_Contingencies_Unfiltered['CCT_ID Outage 1'],Neptune_Contingencies_Unfiltered['CCT_ID Outage 2']]).unique())
+    Neptune_Contingency_Lines_Decomposed=Neptune_Contingency_Circuits_All[Neptune_Contingency_Circuits_All['CCT_ID'].isin(Neptune_Contingency_Node_Numbers)] #LINE NAME AND NODES CONNECTED
+    Neptune_Contingency_Lines_Decomposed=Neptune_Contingency_Lines_Decomposed.reset_index(drop=True)
+    
+    Net_Nodes=pd.Series(pd.concat([NGET_Circuits['Node 1'],NGET_Circuits['Node 2'],NGET_Tx['Node1'],NGET_Tx['Node2']]).unique())
+    Contingency_Nodes=pd.Series(pd.concat([Neptune_Contingency_Lines_Decomposed['Bus 1'],Neptune_Contingency_Lines_Decomposed['Bus 2']]).unique())
+    
+    Neptune_Conflictions = Contingency_Nodes[~Contingency_Nodes.isin(Net_Nodes)] #39 Name Changes Needed
+    Neptune_Conflictions_Resolved=pd.DataFrame(columns=['Neptune','Net'])
+    Neptune_Conflictions_Resolved['Neptune']=Neptune_Conflictions
+    Neptune_Conflictions_Resolved=Neptune_Conflictions_Resolved.reset_index(drop=True)
+    i=0
+    
+    #REPLACING ENTRIES IN NEPTUNE WHERE RUNNING ARRANGEMENTS HAVE BEEN ALTERED
+    for entry in Neptune_Conflictions:
+        entry=list(entry)
+        if entry[5]=='1':
+            entry[5]= 'A'
+        elif entry[5]=='2':
+            entry[5]='B'
+        elif entry[5]=='A':
+            entry[5]=='1'
+        elif entry[5]=='B':
+            entry[5]=='2'
+        entry=''.join(entry)
+        Neptune_Conflictions_Resolved.loc[i,'Net']=entry
+        i+=1
 
-    return bus_ids_df, TEC_Register, IC_Register
+    Neptune_Conflictions_Resolved = Neptune_Conflictions_Resolved[Neptune_Conflictions_Resolved['Net'].isin(Net_Nodes)] #24 NAMES NEED CHANGING TO MATCH THOSE FOUND IN THE NET  
+    
+    #----------------------------------------
+    #Replacing in Index Help Guide - Neptune_Contingency_Lines_Decomposed
+
+    i=0
+    for entry in Neptune_Conflictions_Resolved['Neptune']:
+        Neptune_Contingency_Lines_Decomposed=Neptune_Contingency_Lines_Decomposed.replace(entry,Neptune_Conflictions_Resolved.iloc[i]['Net'])
+        i+=1
+
+    #----------------------------------------
+
+    #REMOVING THE NODES CAN'T SOLVE FROM THE LINE DATABASE
+
+    #producing contingencies in usable format and then generating line names from the buses
+    Neptune_Contingencies_Filtered=Neptune_Contingencies_Unfiltered[['CCT_ID Outage 1','CCT_ID Outage 2']].copy()
+    Neptune_Contingencies_Filtered['cont1 - bus1'],Neptune_Contingencies_Filtered['cont1 - bus2'],Neptune_Contingencies_Filtered['cont2 - bus1'],Neptune_Contingencies_Filtered['cont2 - bus2'],Neptune_Contingencies_Filtered['line1'],Neptune_Contingencies_Filtered['line2']='','','','','',''
+
+    a=[]
+    for i in range(Neptune_Contingencies_Filtered.shape[0]):
+        try:
+            temp=(Neptune_Contingency_Lines_Decomposed.index[Neptune_Contingency_Lines_Decomposed['CCT_ID'] == Neptune_Contingencies_Filtered.iloc[i]['CCT_ID Outage 1']].to_list())[0] #FIND ROW NUMBER OF PLANNED CCT_ID SO CAN EXTRACT BUS NODES
+            Neptune_Contingencies_Filtered.loc[i,'cont1 - bus1']=Neptune_Contingency_Lines_Decomposed.iloc[temp]['Bus 1']
+            Neptune_Contingencies_Filtered.loc[i,'cont1 - bus2']=Neptune_Contingency_Lines_Decomposed.iloc[temp]['Bus 2']
+            temp=(Neptune_Contingency_Lines_Decomposed.index[Neptune_Contingency_Lines_Decomposed['CCT_ID'] == Neptune_Contingencies_Filtered.iloc[i]['CCT_ID Outage 2']].to_list())[0] #FIND ROW NUMBER OF PLANNED CCT_ID SO CAN EXTRACT BUS NODES
+            Neptune_Contingencies_Filtered.loc[i,'cont2 - bus1']=Neptune_Contingency_Lines_Decomposed.iloc[temp]['Bus 1']
+            Neptune_Contingencies_Filtered.loc[i,'cont2 - bus2']=Neptune_Contingency_Lines_Decomposed.iloc[temp]['Bus 2']    
+            Neptune_Contingencies_Filtered.loc[i,'line1']=str(Neptune_Contingencies_Filtered.loc[i,'cont1 - bus1'])+'-'+str(Neptune_Contingencies_Filtered.loc[i,'cont1 - bus2'])
+            Neptune_Contingencies_Filtered.loc[i,'line2']=str(Neptune_Contingencies_Filtered.loc[i,'cont2 - bus1'])+'-'+str(Neptune_Contingencies_Filtered.loc[i,'cont2 - bus2'])
+        except:
+            a.append(i)
+            
+    Neptune_Contingencies_Filtered=Neptune_Contingencies_Filtered.drop(Neptune_Contingencies_Filtered.index[a]) #REMOVING THE PROBLEM CONTINGENCIES
+
+    return bus_ids_df, TEC_Register, IC_Register,Neptune_Contingencies_Filtered
+
+
 
 @st.cache_data
 def create_static_network_elements(bus_ids_df,NGET_Circuits,NGET_Tx):
@@ -422,11 +490,91 @@ def create_load_gen(demand_scaling, scale_interconnector, scale_wind, scale_pv, 
 
     return net
 
+@st.cache_data
+def contingency_line_net_nodes(net,Neptune_Contingencies_Filtered):
+    '''
+    MAIN BODY FOR LOOP
+    1) CHECK EVERYTHING FOR LINE 1
+    2) CHECK EVERYTGING FOR LINE 2
+    
+    STEPS BEING:
+        1.IF LINE IN NET - APPEND LINE INDEX TO Neptune_Net_Line_Indices
+        2.IF LINE IS NOT IN NET - SWAP THE BUS NODES DECLARING THE LINE AND SEARCH FOR THIS - E.G. SELLAFIELD LINES OPP. WAY ROUND IN NEPTUNE 
+        3.IF NOT REMOVE CONNECTION NODE AND SEARCH FOR THIS IN THE REDACTED LIST OF NETWORK LINES Net_Line_Names_Removed_Nodes
+        4.IF NONE OF THESE WORK FORGET THE CONTINGENCY CASE
+        
+    '''
+    
+    #SHOULD REALLY DEFINE A FUNCTION FOR THIS AS CAN RE-USE FOR BOTH EXCEP NUMBER e.g. 1 OR 2
+    
+    Neptune_Net_Line_Indices=pd.DataFrame(columns=['line1','line2'])
+    Net_Line_Names=pd.Series(net.line["name"])
+    Net_Line_Names_Removed_Nodes=net.line['name'].apply(lambda x: re.sub('(?<=\w{5})\w','',x)) #removing connection points as this may be where issues arise from
+    
+    #Line 1
+    for i in range(Neptune_Contingencies_Filtered.shape[0]):
+        if(Net_Line_Names.str.contains(Neptune_Contingencies_Filtered.iloc[i]['line1']).any()): #if cont name in net name
+            Neptune_Net_Line_Indices.loc[i,'line1']=Net_Line_Names.index[Net_Line_Names==Neptune_Contingencies_Filtered.iloc[i]['line1']]
+        else: #otherwise
+            temp=str(Neptune_Contingencies_Filtered.loc[i,'cont1 - bus2'])+'-'+str(Neptune_Contingencies_Filtered.loc[i,'cont1 - bus1']) #flip to/from buses
+            if(Net_Line_Names.str.contains(temp).any()): #and if this works add it
+                Neptune_Net_Line_Indices.loc[i,'line1']=Net_Line_Names.index[Net_Line_Names==temp]
+            else:#else find line manually neglecting connection nodes
+                temp=re.sub('(?<=\w{5})\w','',Neptune_Contingencies_Filtered.iloc[i]['line1'])
+                if(Net_Line_Names_Removed_Nodes.str.contains(temp).any()): #and add if this is found
+                    Neptune_Net_Line_Indices.loc[i,'line1']=Net_Line_Names_Removed_Nodes.index[Net_Line_Names_Removed_Nodes==temp]
+    #Line 2 - same as for Line 1           
+        if(Net_Line_Names.str.contains(Neptune_Contingencies_Filtered.iloc[i]['line2']).any()):
+            Neptune_Net_Line_Indices.loc[i,'line2']=Net_Line_Names.index[Net_Line_Names==Neptune_Contingencies_Filtered.iloc[i]['line2']]             
+        else:
+            temp=str(Neptune_Contingencies_Filtered.loc[i,'cont2 - bus2'])+'-'+str(Neptune_Contingencies_Filtered.loc[i,'cont2 - bus1'])
+            if(Net_Line_Names.str.contains(temp).any()):
+                Neptune_Net_Line_Indices.loc[i,'line2']=Net_Line_Names.index[Net_Line_Names==temp]
+            else:
+                temp=re.sub('(?<=\w{5})\w','',Neptune_Contingencies_Filtered.iloc[i]['line2'])          
+                if(Net_Line_Names_Removed_Nodes.str.contains(temp).any()):
+                    Neptune_Net_Line_Indices.loc[i,'line2']=Net_Line_Names_Removed_Nodes.index[Net_Line_Names_Removed_Nodes==temp]#
+            
+    
+    #DOUBLE ENTRIES ARE FOUND - NEED TO DO MORE PROCESSING        
+            
+    Neptune_Net_Line_Indices=(Neptune_Net_Line_Indices[~Neptune_Net_Line_Indices.isnull().any(axis=1)]).reset_index(drop=True)
+    Neptune_Net_Line_Indices_For_Removal=pd.DataFrame()
+    
+    '''
+    GETTING ONLY 2 LINES IN A CONTINGENCY
+    > if a continency could be e.g. line1 = [141,142] and line2=[143,144]
+    > produce all possible combinations e.g. 141-143, 141-144,142-143,142-144
+    > remove duplicates e.g. if line 141 in both lists, a contingency 141-141 would be created which isn't valid'
+    > then remove mirrored contingencies which do the same thing i.e. 141-142 is the same as 142-141
+    '''
+    for i in range(Neptune_Net_Line_Indices.shape[0]):
+        if(type(Neptune_Net_Line_Indices.iloc[i]['line1'])==np.ndarray): #if multiple possible lines in line1
+            for j in range(len(Neptune_Net_Line_Indices.iloc[i]['line1'])): # go through each instance
+                if(type(Neptune_Net_Line_Indices.iloc[i]['line2'])==np.ndarray): #if multiple lines in line2
+                    for k in range(len(Neptune_Net_Line_Indices.iloc[i]['line2'])): #go through each instance
+                        temp=pd.DataFrame([Neptune_Net_Line_Indices.iloc[i]['line1'][j],Neptune_Net_Line_Indices.iloc[i]['line2'][k]]).T
+                        Neptune_Net_Line_Indices_For_Removal=pd.concat([Neptune_Net_Line_Indices_For_Removal,temp],ignore_index=True)
+                else:
+                    temp=pd.DataFrame(Neptune_Net_Line_Indices.iloc[i]['line1'][j],Neptune_Net_Line_Indices.iloc[i]['line2']).T
+                    Neptune_Net_Line_Indices_For_Removal=pd.concat([Neptune_Net_Line_Indices_For_Removal,temp],ignore_index=True)
+        else: #no multi-lines in line1
+           if(type(Neptune_Net_Line_Indices.iloc[i]['line2'])==np.ndarray):
+               for k in range(len(Neptune_Net_Line_Indices.iloc[i]['line2'])):
+                   temp=pd.DataFrame([Neptune_Net_Line_Indices.iloc[i]['line1'],Neptune_Net_Line_Indices.iloc[i]['line2'][k]]).T
+                   Neptune_Net_Line_Indices_For_Removal=pd.concat([Neptune_Net_Line_Indices_For_Removal,temp],ignore_index=True)
+           else:
+               temp=pd.DataFrame([Neptune_Net_Line_Indices.iloc[i]['line1'],Neptune_Net_Line_Indices.iloc[i]['line2']]).T
+               Neptune_Net_Line_Indices_For_Removal=pd.concat([Neptune_Net_Line_Indices_For_Removal,temp],ignore_index=True)
+
+    Neptune_Net_Line_Indices_For_Removal.columns=['line1','line2']
+    Neptune_Net_Line_Indices_For_Removal = Neptune_Net_Line_Indices_For_Removal[Neptune_Net_Line_Indices_For_Removal['line1'] != Neptune_Net_Line_Indices_For_Removal['line2']] #ensure same line isn't being taken out twice - happens due to logic used
+    Neptune_Net_Line_Indices_For_Removal=Neptune_Net_Line_Indices_For_Removal.apply(lambda r: sorted(r), axis = 1).drop_duplicates() #remove mirrored contingencies i.e. removing lines 141,142 is the same as removing 142,141
+    
+    return Neptune_Net_Line_Indices_For_Removal
+    
 def run_imbalance(net):
     pp.rundcpp(net, numba=False)
-    # line_results_pre_int = pd.DataFrame()
-    # tx_results_pre_int = pd.DataFrame()
-    # line_tx_results_pre_int_sorted = pd.DataFrame()
     line_results_pre_int = net['res_line'].copy()
     tx_results_pre_int = net['res_trafo'].copy()
     tx_results_pre_int["ind"] = tx_results_pre_int.index
@@ -448,23 +596,64 @@ def delete_load_gen(net):
     net.load = net.load[0:0]
     return net
 
-def run_and_critical(outage_line_name, net):
+
+#outage line index = outages planned for network
+#def run_sim(net, l, outage_line_indx,line_results_sorted,tx_results_sorted,line_loading_max,critical_cont_singular,critical_cont_neptune,is_neptune):
+def run_sim(net, l, outage_line_indx,line_results_sorted,tx_results_sorted,line_loading_max,critical_cont_neptune):
+    net.line.loc[l, 'in_service'] = False
+    net.line.loc[outage_line_indx, 'in_service'] = False
+    pp.rundcpp(net, numba=False) #could change numba to #true
+    line_results = net.res_line
+    line_results["ind"] = line_results.index
+    line_results["name"] = net.line.loc[line_results["ind"],"name"]
+    line_results = line_results.sort_values(by="loading_percent",ascending=False)
+    line_results = line_results.drop_duplicates(subset="name", keep="first") 
+    line_results["loading_percent"] = line_results["loading_percent"].round(1)
+    line_results["result"] = line_results["name"] + ": " + line_results["loading_percent"].astype(str) + "%"
+    line_results_sorted = pd.concat([line_results_sorted,line_results], ignore_index=True)
+    tx_results = net.res_trafo
+    tx_results["ind"] = tx_results.index
+    tx_results["name"] = net.trafo.loc[tx_results["ind"],"name"]
+    tx_results = tx_results.sort_values(by="loading_percent",ascending=False)
+    tx_results = tx_results.drop_duplicates(subset="name", keep="first")
+    tx_results["loading_percent"] = tx_results["loading_percent"].round(1)
+    tx_results["result"] = tx_results["name"] + ": " + tx_results["loading_percent"].astype(str) + "%"
+    tx_results_sorted = pd.concat([tx_results_sorted, tx_results], ignore_index=True)
+    
+    if (net.res_line.loading_percent.max() > line_loading_max):
+        #if(is_neptune==True):
+        critical_cont_neptune.append(str(str(net.line.loc[l[0],'name'])+' & '+str(net.line.loc[l[1],'name'])))
+        #elif(is_neptune==False):
+            #critical_cont_singular.append(str(net.line.loc[l,'name']))
+        #else:
+            #print('Something in the background going wrong')
+            
+    net.line.loc[l, 'in_service'] = True
+
+    #return line_results_sorted,tx_results_sorted,critical_cont_singular,critical_cont_neptune
+    return line_results_sorted,tx_results_sorted,critical_cont_neptune
+
+
+def run_and_critical(outage_line_name, net, Neptune_Net_Line_Indices_For_Removal):
     outage_line_indx = []
     outage_trafo_indx = []
+    
     for string in outage_line_name:
         if string in net.line["name"].tolist():
             outage_line_indx.append(net.line[net.line["name"] == string].index[0])
         if string in net.trafo["name"].tolist():
             outage_trafo_indx.append(net.trafo[net.trafo["name"] == string].index[0])
 
+            
     line_loading_max = 100
-    critical_lines = []
-    critical_lines_indx = []
-    line_results_sorted = pd.DataFrame()
-    tx_results_sorted = pd.DataFrame()
+    #critical_cont_singular= []
+    critical_cont_neptune=[]
+    #critical_lines_indx = []
+    line_results_sorted = pd.DataFrame() # container in order to store line results
+    tx_results_sorted = pd.DataFrame() # container to store tranny results
 
     net.line.loc[outage_line_indx, 'in_service'] = False
-    pp.rundcpp(net, numba=False)
+    pp.rundcpp(net, numba=False) #test numba = true - initially false!
     line_results_pre = net['res_line'].copy()
     tx_results_pre = net['res_trafo'].copy()
     tx_results_pre["ind"] = tx_results_pre.index
@@ -482,36 +671,19 @@ def run_and_critical(outage_line_name, net):
         ["p_to_mw", "q_to_mvar", "loading_percent"]].round(1)
     line_tx_results_pre_sorted.reset_index(drop=True, inplace=True)
 
-    lines = net.line.index
-    for l in lines:
-        net.line.loc[l, 'in_service'] = False
-        net.line.loc[outage_line_indx, 'in_service'] = False
-        pp.rundcpp(net, numba=False)
-        line_results = net.res_line
-        line_results["ind"] = line_results.index
-        line_results["name"] = net.line.loc[line_results["ind"],"name"]
-        line_results = line_results.sort_values(by="loading_percent",ascending=False)
-        line_results = line_results.drop_duplicates(subset="name", keep="first")
-        line_results["loading_percent"] = line_results["loading_percent"].round(1)
-        line_results["result"] = line_results["name"] + ": " + line_results["loading_percent"].astype(str) + "%"
-        line_results_sorted = pd.concat([line_results_sorted,line_results], ignore_index=True)
-        tx_results = net.res_trafo
-        tx_results["ind"] = tx_results.index
-        tx_results["name"] = net.trafo.loc[tx_results["ind"],"name"]
-        tx_results = tx_results.sort_values(by="loading_percent",ascending=False)
-        tx_results = tx_results.drop_duplicates(subset="name", keep="first")
-        tx_results["loading_percent"] = tx_results["loading_percent"].round(1)
-        tx_results["result"] = tx_results["name"] + ": " + tx_results["loading_percent"].astype(str) + "%"
-        tx_results_sorted = pd.concat([tx_results_sorted, tx_results], ignore_index=True)
-        if (net.res_line.loading_percent.max() > line_loading_max):
-            critical_lines.append(net.line.loc[l,"name"])
-            critical_lines_indx.append(l)
-        net.line.loc[l, 'in_service'] = True
+    #lines = net.line.index
+    
+    #REMOVED CRITICAL_LINES_INDX AS NOT USED !!
+    #for l in lines:
+        #line_results_sorted,tx_results_sorted,critical_cont_singular,critical_cont_neptune=run_sim(net, l, outage_line_indx,line_results_sorted,tx_results_sorted,line_loading_max,critical_cont_singular,critical_cont_neptune,is_neptune=False)
+    for m in Neptune_Net_Line_Indices_For_Removal:
+        #line_results_sorted,tx_results_sorted,critical_cont_singular,critical_cont_neptune=run_sim(net, m, outage_line_indx,line_results_sorted,tx_results_sorted,line_loading_max,critical_cont_singular,critical_cont_neptune,is_neptune=True)
+        line_results_sorted,tx_results_sorted,critical_cont_neptune=run_sim(net, m, outage_line_indx,line_results_sorted,tx_results_sorted,line_loading_max,critical_cont_neptune)
 
     line_results_sorted_a = pd.DataFrame()
     tx_results_sorted_a = pd.DataFrame()
 
-    if len(line_results_sorted) > 1:
+    if len(line_results_sorted) > 1: #picking the max values of lines with worst values!!
         line_results_sorted_a = (line_results_sorted.sort_values(by="loading_percent",ascending=False)).drop_duplicates(subset="name", keep="first")
     if len(tx_results_sorted_a) > 1:
         tx_results_sorted_a = (tx_results_sorted.sort_values(by="loading_percent", ascending=False)).drop_duplicates(subset="name", keep="first")
@@ -525,17 +697,17 @@ def run_and_critical(outage_line_name, net):
     else:
         overall_result_sorted = pd.DataFrame()
 
-    critical_lines = list(dict.fromkeys(critical_lines))
-    critical_lines_indx = list(dict.fromkeys(critical_lines_indx))
-
+    #critical_cont_singular.sort()
+    critical_cont_neptune.sort()
+    
     net.sgen.drop(net.sgen.index[0:], inplace=True)
-    net.load.drop(net.load.index[0:], inplace=True)
+    net.load.drop(net.load.index[0:], inplace=True) 
     net.ext_grid.drop(net.ext_grid.index[0:], inplace=True)
 
     overall_result_sorted.reset_index(drop=True,inplace=True)
 
-    # return {"Overloaded Lines": overall_result_sorted, "Outages On": outage_line_name, "Critical Lines": critical_lines}
-    return overall_result_sorted, outage_line_name, critical_lines, line_tx_results_pre_sorted
+    #return overall_result_sorted, outage_line_name, critical_cont_singular,critical_cont_neptune, line_tx_results_pre_sorted
+    return overall_result_sorted, outage_line_name,critical_cont_neptune, line_tx_results_pre_sorted
 
     lists_to_delete = [line_results_sorted, tx_results_sorted, line_results_sorted_a, tx_results_sorted_a, overall_result, overall_result_sorted]
 

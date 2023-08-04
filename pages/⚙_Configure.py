@@ -3,12 +3,13 @@ from PIL import Image
 
 
 from main import import_data, manipulate_static_data_sheets, create_static_network_elements, \
-    filter_tec_ic_to_recognizables, create_load_gen, run_imbalance, delete_load_gen, run_and_critical
+    filter_tec_ic_to_recognizables, create_load_gen, run_imbalance, delete_load_gen, run_and_critical, contingency_line_net_nodes
 
-TEC_Register, IC_Register, FES_2022_GSP_Dem, NGET_Circuits, NGET_Circuit_Changes, NGET_Subs, NGET_Tx, NGET_Tx_Changes, Sub_Coordinates = import_data()
-bus_ids_df, TEC_Register, IC_Register = manipulate_static_data_sheets(TEC_Register,IC_Register,FES_2022_GSP_Dem,NGET_Circuits,NGET_Circuit_Changes,NGET_Subs,NGET_Tx,NGET_Tx_Changes,Sub_Coordinates)
+TEC_Register, IC_Register, FES_2022_GSP_Dem, NGET_Circuits, NGET_Circuit_Changes, NGET_Subs, NGET_Tx, NGET_Tx_Changes, Sub_Coordinates,Neptune_Contingencies_Unfiltered,Neptune_Contingency_Circuits_All = import_data()
+bus_ids_df, TEC_Register, IC_Register, Neptune_Contingencies_Filtered = manipulate_static_data_sheets(TEC_Register,IC_Register,FES_2022_GSP_Dem,NGET_Circuits,NGET_Circuit_Changes,NGET_Subs,NGET_Tx,NGET_Tx_Changes,Sub_Coordinates,Neptune_Contingencies_Unfiltered,Neptune_Contingency_Circuits_All)
 net = create_static_network_elements(bus_ids_df,NGET_Circuits,NGET_Tx)
 TEC_Register_With_Bus, IC_Register_With_Bus, FES_2022_GSP_Dem, tot_wind = filter_tec_ic_to_recognizables(net,NGET_Subs,TEC_Register,IC_Register,FES_2022_GSP_Dem)
+Neptune_Net_Line_Indices_For_Removal=contingency_line_net_nodes(net,Neptune_Contingencies_Filtered)
 st.session_state.coord = Sub_Coordinates
 st.session_state.tot_wind = tot_wind
 st.session_state.default_par = [1, 0, 0.51, 0, 0.95, 0.5, 0.42, 0.0, 0.0]
@@ -198,12 +199,17 @@ with st.sidebar:
         if -500 < st.session_state.ext_grid_imb < 500:
             st.markdown(f":green[Imbalance = **{st.session_state.ext_grid_imb} MW**]")
             with st.spinner(text=":orange[DC power flow contingencies running...]"):
-                overall_result_sorted, outage_line_name, critical_lines, line_tx_results_pre_sorted = run_and_critical(outages, net)
+                #overall_result_sorted, outage_line_name, critical_cont_singular,critical_cont_neptune, line_tx_results_pre_sorted = run_and_critical(outages, net, Neptune_Net_Line_Indices_For_Removal)
+                overall_result_sorted, outage_line_name,critical_cont_neptune, line_tx_results_pre_sorted = run_and_critical(outages, net, Neptune_Net_Line_Indices_For_Removal)
                 st.session_state.overall_result_sorted = overall_result_sorted
                 st.session_state.outage_line_name = outage_line_name
-                st.session_state.critical_lines = critical_lines
+                #st.session_state.critical_cont_singular = critical_cont_singular
+                st.session_state.critical_cont_neptune = critical_cont_neptune
                 st.session_state.line_tx_results_pre_sorted = line_tx_results_pre_sorted
-            st.success("**Done! Please view the Results page.**")
+            temp= str(len(Neptune_Net_Line_Indices_For_Removal))
+            temp='Successfully ran '+temp+' contingencies! Please view the Results page'
+            #st.success("**Done! Please view the Results page.**")
+            st.success(temp)
         else:
             st.markdown(f":red[Imbalance = **{st.session_state.ext_grid_imb} MW**]")
             st.error("**There is an imbalance > 500MW, please review your scaling factors above.**")
